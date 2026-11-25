@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>クラフトビール マッシュ温度スケジュール カウントダウンタイマー</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.7; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.7; }
+    }
+    .timer-pulse { animation: pulse-ring 2s ease-in-out infinite; }
+    .step-active { border-left: 4px solid #f59e0b; background: #fffbeb; }
+    .step-done { border-left: 4px solid #10b981; background: #f0fdf4; }
+    .step-pending { border-left: 4px solid #d1d5db; }
+  </style>
+</head>
+<body class="bg-amber-50 min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-6">
+    <!-- Header -->
+    <header class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-amber-900">🍺 マッシュタイマー</h1>
+      <p class="text-sm text-amber-700 mt-1">クラフトビール 醸造用ステップタイマー</p>
+    </header>
+
+    <!-- Tab Navigation -->
+    <div class="flex gap-1 mb-6 bg-amber-100 p-1 rounded-xl" role="tablist" aria-label="メインタブ">
+      <button id="tab-timer" role="tab" aria-selected="true" aria-controls="panel-timer"
+        class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors bg-white text-amber-900 shadow"
+        onclick="switchTab('timer')">タイマー</button>
+      <button id="tab-recipe" role="tab" aria-selected="false" aria-controls="panel-recipe"
+        class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors text-amber-700 hover:bg-amber-200"
+        onclick="switchTab('recipe')">レシピ編集</button>
+      <button id="tab-saved" role="tab" aria-selected="false" aria-controls="panel-saved"
+        class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors text-amber-700 hover:bg-amber-200"
+        onclick="switchTab('saved')">保存済み</button>
+    </div>
+
+    <!-- Timer Panel -->
+    <div id="panel-timer" role="tabpanel" aria-labelledby="tab-timer">
+      <!-- Recipe selector -->
+      <div class="bg-white rounded-xl shadow p-4 mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">現在のレシピ</label>
+        <div class="flex gap-2">
+          <span id="current-recipe-name" class="flex-1 text-lg font-bold text-amber-800" aria-live="polite">-</span>
+          <button onclick="switchTab('recipe')" class="text-sm text-amber-600 hover:text-amber-800 underline">編集</button>
+        </div>
+      </div>
+
+      <!-- Main Timer Display -->
+      <div class="bg-white rounded-xl shadow p-6 mb-4 text-center">
+        <div id="current-step-name" class="text-lg font-semibold text-gray-700 mb-1" aria-live="polite">-</div>
+        <div class="flex items-center justify-center gap-6 mb-4">
+          <div class="text-center">
+            <div class="text-3xl font-bold text-amber-600" id="current-temp" aria-label="目標温度">-</div>
+            <div class="text-xs text-gray-500">目標温度 (°C)</div>
+          </div>
+          <div id="timer-display" class="timer-pulse text-6xl font-mono font-bold text-amber-900" aria-live="polite" aria-atomic="true">--:--</div>
+          <div class="text-center">
+            <div class="text-3xl font-bold text-blue-600" id="step-progress" aria-label="ステップ進捗">0/0</div>
+            <div class="text-xs text-gray-500">ステップ</div>
+          </div>
+        </div>
+        <!-- Notes -->
+        <div id="current-notes" class="text-sm text-gray-500 italic mb-4" aria-live="polite"></div>
+        <!-- Progress bar -->
+        <div class="w-full bg-gray-200 rounded-full h-2 mb-4" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="step-progress-bar-container">
+          <div id="step-progress-bar" class="bg-amber-500 h-2 rounded-full transition-all duration-1000" style="width:0%"></div>
+        </div>
+        <!-- Controls -->
+        <div class="flex gap-3 justify-center">
+          <button id="btn-start" onclick="startTimer()" aria-label="タイマー開始"
+            class="px-6 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50 transition-colors">
+            開始
+          </button>
+          <button id="btn-pause" onclick="pauseTimer()" aria-label="一時停止" disabled
+            class="px-6 py-3 bg-gray-400 text-white rounded-xl font-bold hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 transition-colors">
+            一時停止
+          </button>
+          <button id="btn-reset" onclick="resetTimer()" aria-label="リセット"
+            class="px-6 py-3 bg-red-400 text-white rounded-xl font-bold hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 transition-colors">
+            リセット
+          </button>
+        </div>
+      </div>
+
+      <!-- Step List -->
+      <div id="step-list-timer" class="space-y-2" aria-label="醸造ステップ一覧">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Recipe Edit Panel -->
+    <div id="panel-recipe" role="tabpanel" aria-labelledby="tab-recipe" class="hidden">
+      <!-- Preset templates -->
+      <div class="bg-white rounded-xl shadow p-4 mb-4">
+        <h2 class="font-bold text-gray-800 mb-3">プリセットテンプレート</h2>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="loadPreset('american-ale')" class="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            アメリカン エール
+          </button>
+          <button onclick="loadPreset('german-lager')" class="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            ジャーマン ラガー
+          </button>
+          <button onclick="loadPreset('belgian-wit')" class="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            ベルジャン ウィット
+          </button>
+        </div>
+      </div>
+
+      <!-- Recipe Name -->
+      <div class="bg-white rounded-xl shadow p-4 mb-4">
+        <label for="recipe-name-input" class="block text-sm font-medium text-gray-700 mb-1">レシピ名</label>
+        <input id="recipe-name-input" type="text" placeholder="例: マイ ペールエール"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 text-gray-800">
+      </div>
+
+      <!-- Steps Editor -->
+      <div class="bg-white rounded-xl shadow p-4 mb-4">
+        <h2 class="font-bold text-gray-800 mb-3">ステップ設定 (最大6ステップ)</h2>
+        <div id="steps-editor" class="space-y-3">
+          <!-- Populated by JS -->
+        </div>
+        <button id="btn-add-step" onclick="addStep()" aria-label="ステップを追加"
+          class="mt-3 w-full py-2 border-2 border-dashed border-amber-300 text-amber-600 rounded-lg hover:border-amber-500 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors">
+          + ステップを追加
+        </button>
+      </div>
+
+      <!-- Save Button -->
+      <div class="flex gap-3">
+        <button onclick="saveRecipe()" aria-label="レシピを保存"
+          class="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors">
+          保存して使用
+        </button>
+      </div>
+    </div>
+
+    <!-- Saved Recipes Panel -->
+    <div id="panel-saved" role="tabpanel" aria-labelledby="tab-saved" class="hidden">
+      <div class="bg-white rounded-xl shadow p-4">
+        <h2 class="font-bold text-gray-800 mb-3">保存済みレシピ</h2>
+        <div id="saved-recipes-list" class="space-y-2" aria-label="保存済みレシピ一覧">
+          <!-- Populated by JS -->
+        </div>
+        <p id="no-recipes-msg" class="text-gray-400 text-sm text-center py-4 hidden">保存済みレシピはありません</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== State =====
+    let currentRecipe = null;
+    let timerState = {
+      running: false,
+      paused: false,
+      stepIndex: 0,
+      secondsLeft: 0,
+      intervalId: null,
+      totalStepSeconds: 0,
+    };
+    let audioCtx = null;
+
+    // ===== Audio =====
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function beep(freq = 880, duration = 0.3, gain = 0.4, type = 'sine') {
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gainNode.gain.setValueAtTime(gain, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) { /* silent fail */ }
+    }
+
+    function stepCompleteAlert() {
+      beep(880, 0.2, 0.5);
+      setTimeout(() => beep(1100, 0.2, 0.5), 250);
+      setTimeout(() => beep(1320, 0.4, 0.5), 500);
+    }
+
+    // ===== Presets =====
+    const PRESETS = {
+      'american-ale': {
+        name: 'アメリカン エール',
+        steps: [
+          { name: 'プロテイン レスト', temp: 50, duration: 15, notes: 'タンパク質分解・ヘイズ低減' },
+          { name: 'ベータアミラーゼ', temp: 65, duration: 60, notes: '発酵性糖を最大化・ドライな仕上がり' },
+          { name: 'マッシュアウト', temp: 76, duration: 10, notes: '酵素失活・ラウタリング準備' },
+        ]
+      },
+      'german-lager': {
+        name: 'ジャーマン ラガー',
+        steps: [
+          { name: 'アシッド レスト', temp: 40, duration: 20, notes: 'pH調整・フィチン酸分解' },
+          { name: 'プロテイン レスト', temp: 52, duration: 20, notes: 'タンパク質分解' },
+          { name: 'ベータアミラーゼ', temp: 63, duration: 40, notes: '発酵性糖生成' },
+          { name: 'アルファアミラーゼ', temp: 72, duration: 20, notes: 'デキストリン生成・ボディ付与' },
+          { name: 'マッシュアウト', temp: 76, duration: 10, notes: '酵素失活' },
+        ]
+      },
+      'belgian-wit': {
+        name: 'ベルジャン ウィット',
+        steps: [
+          { name: 'プロテイン レスト', temp: 50, duration: 30, notes: '小麦タンパク質分解・クリアーな白色' },
+          { name: 'フェルラ酸 レスト', temp: 44, duration: 15, notes: 'フェルラ酸生成・4VG生産' },
+          { name: 'サッカリフィケーション', temp: 67, duration: 45, notes: '糖化メイン' },
+          { name: 'マッシュアウト', temp: 76, duration: 10, notes: '酵素失活' },
+        ]
+      }
+    };
+
+    // ===== localStorage helpers =====
+    function loadAllRecipes() {
+      try { return JSON.parse(localStorage.getItem('mashtimerRecipes') || '[]'); }
+      catch { return []; }
+    }
+
+    function saveAllRecipes(recipes) {
+      localStorage.setItem('mashtimerRecipes', JSON.stringify(recipes));
+    }
+
+    function loadActiveRecipeId() {
+      return localStorage.getItem('mashtimerActiveId') || null;
+    }
+
+    function saveActiveRecipeId(id) {
+      localStorage.setItem('mashtimerActiveId', id);
+    }
+
+    // ===== Tab switching =====
+    function switchTab(tab) {
+      ['timer', 'recipe', 'saved'].forEach(t => {
+        document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById('tab-' + t);
+        btn.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+        if (t === tab) {
+          btn.classList.add('bg-white', 'text-amber-900', 'shadow');
+          btn.classList.remove('text-amber-700', 'hover:bg-amber-200');
+        } else {
+          btn.classList.remove('bg-white', 'text-amber-900', 'shadow');
+          btn.classList.add('text-amber-700', 'hover:bg-amber-200');
+        }
+      });
+      if (tab === 'saved') renderSavedRecipes();
+      if (tab === 'recipe') renderStepsEditor();
+    }
+
+    // ===== Recipe Editor =====
+    let editingSteps = [];
+    let editingName = '';
+
+    function loadPreset(key) {
+      const preset = PRESETS[key];
+      editingSteps = preset.steps.map(s => ({ ...s }));
+      editingName = preset.name;
+      document.getElementById('recipe-name-input').value = editingName;
+      renderStepsEditor();
+    }
+
+    function addStep() {
+      if (editingSteps.length >= 6) {
+        alert('最大6ステップまでです');
+        return;
+      }
+      editingSteps.push({ name: '', temp: 65, duration: 30, notes: '' });
+      renderStepsEditor();
+    }
+
+    function removeStep(idx) {
+      editingSteps.splice(idx, 1);
+      renderStepsEditor();
+    }
+
+    function renderStepsEditor() {
+      const container = document.getElementById('steps-editor');
+      container.innerHTML = '';  // xss-ok: reviewed-internal-data
+      editingSteps.forEach((step, idx) => {
+        const div = document.createElement('div');
+        div.className = 'border border-gray-200 rounded-lg p-3 bg-gray-50';
+        div.innerHTML = `<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold text-amber-700 uppercase">ステップ ${idx + 1}</span><button onclick="removeStep(${idx})" aria-label="ステップ${idx+1}を削除" class="text-red-400 hover:text-red-600 text-xs focus:outline-none focus:ring-2 focus:ring-red-300 rounded">削除</button></div><div class="grid grid-cols-2 gap-2"><div class="col-span-2"><label class="text-xs text-gray-500">ステップ名</label><input type="text" value="${escapeHtml(step.name)}" placeholder="例: ベータアミラーゼ" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" onchange="editingSteps[${idx}].name = this.value"></div><div><label class="text-xs text-gray-500">温度 (°C)</label><input type="number" value="${step.temp}" min="30" max="80" step="1" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" onchange="editingSteps[${idx}].temp = parseInt(this.value) || 65"></div><div><label class="text-xs text-gray-500">時間 (分)</label><input type="number" value="${step.duration}" min="1" max="120" step="1" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" onchange="editingSteps[${idx}].duration = parseInt(this.value) || 30"></div><div class="col-span-2"><label class="text-xs text-gray-500">メモ</label><input type="text" value="${escapeHtml(step.notes)}" placeholder="任意のメモ" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" onchange="editingSteps[${idx}].notes = this.value"></div></div>`; // xss-ok: idx is computed array index; step.temp/step.duration are computed numbers; step.name/step.notes use escapeHtml
+        container.appendChild(div);
+      });
+      document.getElementById('btn-add-step').disabled = editingSteps.length >= 6;
+    }
+
+    function saveRecipe() {
+      const name = document.getElementById('recipe-name-input').value.trim();
+      if (!name) { alert('レシピ名を入力してください'); return; }
+      if (editingSteps.length === 0) { alert('ステップを1つ以上追加してください'); return; }
+      const invalidStep = editingSteps.find(s => !s.name.trim());
+      if (invalidStep) { alert('全てのステップに名前を入力してください'); return; }
+
+      const recipes = loadAllRecipes();
+      const id = Date.now().toString();
+      const recipe = { id, name, steps: editingSteps.map(s => ({ ...s })) };
+      recipes.push(recipe);
+      saveAllRecipes(recipes);
+      setCurrentRecipe(recipe);
+      saveActiveRecipeId(id);
+      switchTab('timer');
+    }
+
+    // ===== Saved Recipes =====
+    function renderSavedRecipes() {
+      const container = document.getElementById('saved-recipes-list');
+      const msg = document.getElementById('no-recipes-msg');
+      const recipes = loadAllRecipes();
+      container.innerHTML = '';  // xss-ok: reviewed-internal-data
+      if (recipes.length === 0) {
+        msg.classList.remove('hidden');
+        return;
+      }
+      msg.classList.add('hidden');
+      recipes.forEach(recipe => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between p-3 border border-gray-200 rounded-lg';
+        div.innerHTML = `<div><div class="font-medium text-gray-800">${escapeHtml(recipe.name)}</div><div class="text-xs text-gray-500">${recipe.steps.length} ステップ</div></div><div class="flex gap-2"><button onclick="loadRecipeForEdit('${recipe.id}')" aria-label="${escapeHtml(recipe.name)}を編集" class="px-3 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400">編集</button><button onclick="activateRecipe('${recipe.id}')" aria-label="${escapeHtml(recipe.name)}を使用" class="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400">使用</button><button onclick="deleteRecipe('${recipe.id}')" aria-label="${escapeHtml(recipe.name)}を削除" class="px-3 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-400">削除</button></div>`; // xss-ok: recipe.id is generated numeric id; recipe.steps.length is computed; recipe.name uses escapeHtml
+        container.appendChild(div);
+      });
+    }
+
+    function loadRecipeForEdit(id) {
+      const recipes = loadAllRecipes();
+      const recipe = recipes.find(r => r.id === id);
+      if (!recipe) return;
+      editingSteps = recipe.steps.map(s => ({ ...s }));
+      editingName = recipe.name;
+      document.getElementById('recipe-name-input').value = editingName;
+      renderStepsEditor();
+      switchTab('recipe');
+    }
+
+    function activateRecipe(id) {
+      const recipes = loadAllRecipes();
+      const recipe = recipes.find(r => r.id === id);
+      if (!recipe) return;
+      setCurrentRecipe(recipe);
+      saveActiveRecipeId(id);
+      switchTab('timer');
+    }
+
+    function deleteRecipe(id) {
+      if (!confirm('このレシピを削除しますか？')) return;
+      const recipes = loadAllRecipes().filter(r => r.id !== id);
+      saveAllRecipes(recipes);
+      renderSavedRecipes();
+      if (loadActiveRecipeId() === id) {
+        currentRecipe = null;
+        renderTimerPanel();
+      }
+    }
+
+    // ===== Timer Logic =====
+    function setCurrentRecipe(recipe) {
+      currentRecipe = recipe;
+      resetTimer();
+      renderTimerPanel();
+    }
+
+    function renderTimerPanel() {
+      document.getElementById('current-recipe-name').textContent = currentRecipe ? currentRecipe.name : '-';
+      renderStepListTimer();
+      if (currentRecipe && currentRecipe.steps.length > 0) {
+        timerState.stepIndex = 0;
+        timerState.secondsLeft = currentRecipe.steps[0].duration * 60;
+        timerState.totalStepSeconds = currentRecipe.steps[0].duration * 60;
+        updateTimerDisplay();
+      } else {
+        document.getElementById('timer-display').textContent = '--:--';
+        document.getElementById('current-step-name').textContent = '-';
+        document.getElementById('current-temp').textContent = '-';
+        document.getElementById('step-progress').textContent = '0/0';
+        document.getElementById('current-notes').textContent = '';
+      }
+    }
+
+    function renderStepListTimer() {
+      const container = document.getElementById('step-list-timer');
+      container.innerHTML = '';  // xss-ok: reviewed-internal-data
+      if (!currentRecipe) return;
+      currentRecipe.steps.forEach((step, idx) => {
+        const div = document.createElement('div');
+        let statusClass = 'step-pending';
+        if (idx < timerState.stepIndex) statusClass = 'step-done';
+        else if (idx === timerState.stepIndex) statusClass = 'step-active';
+        div.className = `${statusClass} rounded-lg p-3 flex items-center justify-between`;
+        div.setAttribute('aria-current', idx === timerState.stepIndex ? 'step' : 'false');
+        div.innerHTML = `<div><span class="font-medium text-gray-800">${escapeHtml(step.name)}</span>${step.notes ? `<p class="text-xs text-gray-500 mt-0.5">${escapeHtml(step.notes)}</p>` : ''}</div><div class="text-right ml-4 flex-shrink-0"><div class="font-bold text-amber-700">${step.temp}°C</div><div class="text-xs text-gray-500">${step.duration}分</div></div>`; // xss-ok: step.temp/step.duration are computed numbers; step.name/step.notes use escapeHtml
+        container.appendChild(div);
+      });
+    }
+
+    function updateTimerDisplay() {
+      if (!currentRecipe || currentRecipe.steps.length === 0) return;
+      const step = currentRecipe.steps[timerState.stepIndex];
+      const mins = Math.floor(timerState.secondsLeft / 60);
+      const secs = timerState.secondsLeft % 60;
+      document.getElementById('timer-display').textContent =
+        String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      document.getElementById('current-step-name').textContent = step.name;
+      document.getElementById('current-temp').textContent = step.temp + '°C';
+      document.getElementById('step-progress').textContent =
+        (timerState.stepIndex + 1) + '/' + currentRecipe.steps.length;
+      document.getElementById('current-notes').textContent = step.notes || '';
+      const pct = timerState.totalStepSeconds > 0
+        ? Math.round((1 - timerState.secondsLeft / timerState.totalStepSeconds) * 100) : 0;
+      document.getElementById('step-progress-bar').style.width = pct + '%';
+      document.getElementById('step-progress-bar-container').setAttribute('aria-valuenow', pct);
+    }
+
+    function startTimer() {
+      if (!currentRecipe || currentRecipe.steps.length === 0) {
+        alert('レシピを選択してください');
+        return;
+      }
+      if (timerState.running) return;
+      timerState.running = true;
+      timerState.paused = false;
+      document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-pause').disabled = false;
+      beep(660, 0.1);
+      timerState.intervalId = setInterval(tick, 1000);
+    }
+
+    function tick() {
+      if (timerState.secondsLeft <= 0) {
+        stepCompleteAlert();
+        timerState.stepIndex++;
+        if (timerState.stepIndex >= currentRecipe.steps.length) {
+          finishAll();
+          return;
+        }
+        timerState.secondsLeft = currentRecipe.steps[timerState.stepIndex].duration * 60;
+        timerState.totalStepSeconds = timerState.secondsLeft;
+        renderStepListTimer();
+      } else {
+        timerState.secondsLeft--;
+      }
+      updateTimerDisplay();
+    }
+
+    function pauseTimer() {
+      if (!timerState.running) return;
+      if (!timerState.paused) {
+        clearInterval(timerState.intervalId);
+        timerState.paused = true;
+        document.getElementById('btn-pause').textContent = '再開';
+        document.getElementById('btn-start').disabled = false;
+        timerState.running = false;
+      }
+    }
+
+    function resetTimer() {
+      clearInterval(timerState.intervalId);
+      timerState.running = false;
+      timerState.paused = false;
+      timerState.stepIndex = 0;
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-pause').disabled = true;
+      document.getElementById('btn-pause').textContent = '一時停止';
+      if (currentRecipe && currentRecipe.steps.length > 0) {
+        timerState.secondsLeft = currentRecipe.steps[0].duration * 60;
+        timerState.totalStepSeconds = timerState.secondsLeft;
+        updateTimerDisplay();
+        renderStepListTimer();
+      }
+    }
+
+    function finishAll() {
+      clearInterval(timerState.intervalId);
+      timerState.running = false;
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-pause').disabled = true;
+      document.getElementById('timer-display').textContent = '完了!';
+      document.getElementById('current-step-name').textContent = '全ステップ完了！';
+      document.getElementById('step-progress-bar').style.width = '100%';
+      stepCompleteAlert();
+      setTimeout(() => stepCompleteAlert(), 800);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ===== Init =====
+    function init() {
+      // Load active recipe
+      const activeId = loadActiveRecipeId();
+      if (activeId) {
+        const recipes = loadAllRecipes();
+        const recipe = recipes.find(r => r.id === activeId);
+        if (recipe) {
+          currentRecipe = recipe;
+        }
+      }
+      // If no saved recipe, default to American Ale (don't save it automatically)
+      if (!currentRecipe) {
+        currentRecipe = { ...PRESETS['american-ale'], id: 'preset', steps: PRESETS['american-ale'].steps.map(s => ({ ...s })) };
+      }
+      editingSteps = currentRecipe.steps.map(s => ({ ...s }));
+      editingName = currentRecipe.name;
+      document.getElementById('recipe-name-input').value = editingName;
+      renderStepsEditor();
+      renderTimerPanel();
+    }
+
+    init();
+  </script>
+</body>
+</html>
